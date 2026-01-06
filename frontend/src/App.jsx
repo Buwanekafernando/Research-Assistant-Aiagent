@@ -30,7 +30,7 @@ function App() {
       }
 
       const data = await response.json()
-      // Backend returns { "response": { ...structured_data... } } or { "response": "string" }
+      
       setResult(data.response)
     } catch (err) {
       console.error(err)
