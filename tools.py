@@ -40,7 +40,7 @@ tools = [wiki_tool, save_tool]
 # 3. Agent Setup
 def run_agent(query: str):
     # Use Gemini Pro (ensure GOOGLE_API_KEY is in .env)
-    llm = ChatGoogleGenerativeAI(model="gemini-3.5-pro", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0)
     
     # In 2026, tool-calling agents work best with specific message placeholders
     prompt = ChatPromptTemplate.from_messages([
