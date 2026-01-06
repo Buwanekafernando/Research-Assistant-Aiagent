@@ -1,83 +1,67 @@
-from langchain_community.tools import WikipediaQueryRun , DuckDuckGoSearchRun
+import os
+from datetime import datetime
+from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_core.tools import Tool
-from datetime import datetime
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
-from pydantic import BaseModel
-from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 
 load_dotenv()
 
+# 1. Define Output Schema
 class ResearchResponse(BaseModel):
-    topic: str
-    summary: str
-    sources: list[str]
-    tools_used: list[str]
+    topic: str = Field(description="The main topic of research")
+    summary: str = Field(description="A detailed summary of findings")
+    sources: list[str] = Field(description="List of sources used")
+    tools_used: list[str] = Field(description="Names of tools used during research")
 
-def save_to_text(data:str,filename:str = "research_output.txt"):
+# 2. Define Tools
+def save_to_text(data: str, filename: str = "research_output.txt"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     formatted_text = f"--- Research Output --- \nTimestamp: {timestamp}\n\n{data}\n\n"
-
-    with open(filename,"a",encoding="utf-8") as f:
+    with open(filename, "a", encoding="utf-8") as f:
         f.write(formatted_text)
-    return f"data successfully saved to {filename}"
+    return f"Successfully saved to {filename}"
 
 save_tool = Tool(
     name="save_text_to_file",
     func=save_to_text,
-    description= "Saves structured reasearch data to a text file.",
+    description="Saves final research findings to a text file. Use this ONLY after research is complete.",
 )
 
-# search = DuckDuckGoSearchRun()
-# search_tool = Tool(
-#     name="search",
-#     func=search.run,
-#     description= "Search the web for information",
-
-# )
-
-api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=100)
+api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=500)
 wiki_tool = WikipediaQueryRun(api_wrapper=api_wrapper)
+tools = [wiki_tool, save_tool]
 
+# 3. Agent Setup
 def run_agent(query: str):
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
-    parser = PydanticOutputParser(pydantic_object=ResearchResponse)
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """
-                You are a research assistant that will help generate a research paper.
-                Answer the user query and use neccessary tools.
-                Wrap the output in this format and provide no other text\n{format_instructions}
-                """,
-            ),
-            ("placeholder" , "{chat_history}"),
-            ("human", "{query}"),
-            ("placeholder","{agent_scratchpad}"),
-        ]
-
-    ).partial(format_instructions=parser.get_format_instructions())
-
-
-    tools = [wiki_tool,save_tool]
-    agent = create_tool_calling_agent(
-        llm=llm,
-        prompt=prompt,
-        tools= tools
-    )
-
-    agent_executor = AgentExecutor(agent=agent,tools=tools,verbose=True)
-    raw_response = agent_executor.invoke({"query": query})
+    # Use Gemini Pro (ensure GOOGLE_API_KEY is in .env)
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0)
     
-    try:
-        structured_response = parser.parse(raw_response.get("output"))
-        return structured_response
-    except Exception as e:
-        # Fallback if parsing fails, or return raw output
-        print("Error parsing response", e, "Raw Response - ", raw_response)
-        return raw_response.get("output")
+    # In 2026, tool-calling agents work best with specific message placeholders
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a research assistant. Use tools to find info, save it, and then provide a final structured summary."),
+        ("human", "{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
+
+    # Initialize Agent
+    agent = create_tool_calling_agent(llm, tools, prompt)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+    # 4. Execute and Manually Structure (or use with_structured_output)
+    raw_response = agent_executor.invoke({"input": query})
+    output_text = raw_response.get("output")
+    
+    # Force structuring of the final string output
+    structured_llm = llm.with_structured_output(ResearchResponse)
+    return structured_llm.invoke(f"Extract research details from this text: {output_text}")
+
+if __name__ == "__main__":
+    result = run_agent("Research the history of the James Webb Space Telescope and save the findings.")
+    print("\n--- Structured Result ---")
+    print(result.model_dump_json(indent=2))
