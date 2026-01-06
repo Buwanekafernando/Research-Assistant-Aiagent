@@ -31,13 +31,13 @@ save_tool = Tool(
     description= "Saves structured reasearch data to a text file.",
 )
 
-search = DuckDuckGoSearchRun()
-search_tool = Tool(
-    name="search",
-    func=search.run,
-    description= "Search the web for information",
+# search = DuckDuckGoSearchRun()
+# search_tool = Tool(
+#     name="search",
+#     func=search.run,
+#     description= "Search the web for information",
 
-)
+# )
 
 api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=100)
 wiki_tool = WikipediaQueryRun(api_wrapper=api_wrapper)
@@ -64,7 +64,7 @@ def run_agent(query: str):
     ).partial(format_instructions=parser.get_format_instructions())
 
 
-    tools = [search_tool, wiki_tool,save_tool]
+    tools = [wiki_tool,save_tool]
     agent = create_tool_calling_agent(
         llm=llm,
         prompt=prompt,
